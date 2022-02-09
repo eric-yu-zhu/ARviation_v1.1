@@ -10,24 +10,20 @@ using UnityEngine.SceneManagement;
 public class ImageTracking : MonoBehaviour
 {
     // variables
-    public GameObject AR_object;
-    //public GameObject AR_marker;
-    //public GameObject AugmentedWorld;
-    //public Vector3 offset = Vector3.zero;
-    //public float theta = 0;
-    //public float phi = 0;
-    //public bool isMarkerDetected = false;
+    [System.Serializable]
+    public struct AR_item
+    {
+        public string MarkerName;
+        public GameObject AugmentObject;
+    }
+    public AR_item[] AR_item_list;
+
+    Dictionary<string, bool> dict_detected = new Dictionary<string, bool>();
+    Dictionary<string, GameObject> dict_object = new Dictionary<string, GameObject>();
 
     ARTrackedImageManager trackedImageManager;
     AudioSource source;
 
-    //Vector3 AR_marker_angle;
-    //Vector3 AR_marker_position;
-    //Quaternion sampledRotation = new Quaternion(0, 0, 0, 0);
-    //int counter = 0;
-    //int counter_max = 60;
-
-    //Dictionary<string, string> scene_marker_dict = new Dictionary<string, string>();
 
     // Awake
     void Awake()
@@ -37,28 +33,43 @@ public class ImageTracking : MonoBehaviour
 
         // initialization
         trackedImageManager = FindObjectOfType<ARTrackedImageManager>();
-        AR_object.SetActive(false);
-        //AugmentedWorld.SetActive(false);
-        //AR_marker_angle = AR_marker.transform.localEulerAngles;
-        //AR_marker_position = AR_marker.transform.position;
-        //counter = 0;
 
-        //// scene_marker_dict
-        //scene_marker_dict["scene01_dumper"] = "marker13";
-        //scene_marker_dict["scene02_casthouse"] = "marker13";
+        // set dict_object
+        for (int i = 0; i < AR_item_list.Length; i++)
+        {
+            GameObject object_AR = AR_item_list[i].AugmentObject;
+            string MarkerName = AR_item_list[i].MarkerName;
+            object_AR.name = MarkerName;
+            object_AR.SetActive(false);
+            dict_object.Add(MarkerName, object_AR);
+        }
+
+        // get marker list
+        var lib = GameObject.Find("AR Session Origin").GetComponent<ARTrackedImageManager>().referenceLibrary;
+        int N_marker = lib.count;
+        string[] marker_list = new string[N_marker];
+        for (int i = 0; i < N_marker; i++)
+        {
+            marker_list[i] = lib[i].name;
+            //print(marker_list[i]);
+        }
+
+        // set dict_detected
+        foreach (string marker in marker_list)
+        {
+            dict_detected.Add(marker, false);
+        }
+
+        // sound
+        source = gameObject.AddComponent<AudioSource>();
+        AudioClip clip = Resources.Load<AudioClip>("AudioClip/sound_camera_snap");
+        source.clip = clip;
     }
 
 
     // Start
     void Start()
     {
-        //// read offset
-        //(offset, theta, phi) = csv_manager.instance.read_offset();
-
-        // sound
-        source = gameObject.AddComponent<AudioSource>();
-        AudioClip clip = Resources.Load<AudioClip>("AudioClip/sound_camera_snap");
-        source.clip = clip;
     }
 
 
@@ -81,68 +92,84 @@ public class ImageTracking : MonoBehaviour
     {
         if (eventArgs.added.Count > 0)
         {            
-            bool tf = UpdateImage(eventArgs.added);
-            if (!tf) return;
+            UpdateImage(eventArgs.added);
             #if UNITY_ANDROID || UNITY_IPHONE
                 Handheld.Vibrate();
-#endif
-
+            #endif
             source.Play();
-            //isMarkerDetected = true;
+
+            for (int i = 0; i < eventArgs.added.Count; i++)
+            {
+                dict_detected[eventArgs.added[i].referenceImage.name] = true;
+            }
             return;
         }
 
         if (eventArgs.updated.Count > 0)
         {
-            bool tf = UpdateImage(eventArgs.updated);
+            UpdateImage(eventArgs.updated);
             return;
         }
     }
 
 
     // UpdateImage
-    bool UpdateImage(List<ARTrackedImage> trackedImageList)
+    void UpdateImage(List<ARTrackedImage> trackedImageList)
     {
-        //ARTrackedImage trackedImage = findMarker(trackedImageList);
-        ARTrackedImage trackedImage = trackedImageList[0];
-        if (trackedImage == null) return false;
-        AR_object.SetActive(true);
-        AR_object.transform.position = trackedImage.transform.position;
-        //if (counter < counter_max) counter++;
-        //Vector3 MarkerPosition = trackedImage.transform.position;
-        //Quaternion MarkerAngles = trackedImage.transform.rotation;
-        //MarkerAngles = MarkerAngles * Quaternion.Euler(new Vector3(90, 0, 0));
-        //AugmentedWorld.SetActive(true);
-        //if (counter > 1 & counter < counter_max)
-        //{
-        //    sampledRotation = Quaternion.Lerp(sampledRotation, MarkerAngles, 1.0f / (counter - 1));       
-        //}
-        //AugmentedWorld.transform.rotation = Quaternion.Euler(new Vector3(phi, theta, 0)) * sampledRotation * Quaternion.Euler(-AR_marker_angle);
-        //AugmentedWorld.transform.position = MarkerPosition + offset - AugmentedWorld.transform.rotation * AR_marker_position;
-        return true;
+        foreach (ARTrackedImage trackedImage in trackedImageList)
+        {
+            string MarkerName = trackedImage.referenceImage.name;
+            Vector3 MarkerPosition = trackedImage.transform.position;
+            if (dict_object.ContainsKey(MarkerName))
+            {
+                GameObject object_AR = dict_object[MarkerName];
+                object_AR.transform.position = MarkerPosition;
+                object_AR.SetActive(true);
+            }
+        }
+
     }
-
-
-    //// find marker
-    //ARTrackedImage findMarker(List<ARTrackedImage> trackedImageList)
-    //{
-    //    string scene_name = SceneManager.GetActiveScene().name;
-    //    ARTrackedImage trackedImage = null;
-    //    for (int i = 0; i < trackedImageList.Count; i++)
-    //    {
-    //        string marker_name = trackedImageList[i].referenceImage.name;
-    //        if (marker_name == scene_marker_dict[scene_name])
-    //        {
-    //            trackedImage = trackedImageList[i];
-    //            break;
-    //        }
-    //    }
-    //    return trackedImage;
-    //}
-
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+//// read offset
+//(offset, theta, phi) = csv_manager.instance.read_offset();
+
+//// get marker list
+//var lib = GameObject.Find("AR Session Origin").GetComponent<ARTrackedImageManager>().referenceLibrary;
+//int N_marker = lib.count;
+//string[] marker_list = new string[N_marker];
+//for (int i = 0; i < N_marker; i++)
+//{
+//    marker_list[i] = lib[i].name;
+//    //print(marker_list[i]);
+//}
+
+//// set dictionaries
+//foreach (string marker in marker_list)
+//{
+//    dict_detected.Add(marker, false);
+//}
+
+
+//// sound
+//source = gameObject.AddComponent<AudioSource>();
+//AudioClip clip = Resources.Load<AudioClip>("AudioClip/sound_camera_snap");
+//source.clip = clip;
+
+// variables
+//public GameObject AR_object;
+//public GameObject AR_marker;
+//public GameObject AugmentedWorld;
+//public Vector3 offset = Vector3.zero;
+//public float theta = 0;
+//public float phi = 0;
+//public bool isMarkerDetected = false;
+
+
+
+
 ////debug <<<
 //Debug.Log("counter = " + counter);
 //foreach (var image in trackedImageList)
@@ -248,11 +275,11 @@ public class ImageTracking : MonoBehaviour
 
 //// to remove <<<
 ////Debug.Log("ok0001");
-//for (int i = 0; i < prefab_AR_list.Length; i++)
+//for (int i = 0; i < AR_item_list.Length; i++)
 //{
-//    //GameObject prefab_AR = prefab_AR_list[i].AugmentObject;
-//    GameObject object_AR = prefab_AR_list[i].AugmentObject;
-//    string MarkerName = prefab_AR_list[i].MarkerName;
+//    //GameObject prefab_AR = AR_item_list[i].AugmentObject;
+//    GameObject object_AR = AR_item_list[i].AugmentObject;
+//    string MarkerName = AR_item_list[i].MarkerName;
 //    //GameObject object_AR = Instantiate(prefab_AR, Vector3.zero, Quaternion.identity);
 //    //object_AR.name = MarkerName;
 //    //POS <<<
@@ -269,12 +296,12 @@ public class ImageTracking : MonoBehaviour
 
 //// fields (old)
 //[System.Serializable]
-//public struct prefab_AR_item
+//public struct AR_item
 //{
 //    public string MarkerName;
 //    public GameObject AugmentObject;
 //}
-//public prefab_AR_item[] prefab_AR_list;
+//public AR_item[] AR_item_list;
 
 ////public GameObject prefab_AR = null;
 
@@ -301,12 +328,12 @@ public class ImageTracking : MonoBehaviour
 //{
 //    // fields
 //    [System.Serializable]
-//    public struct prefab_AR_item
+//    public struct AR_item
 //    {
 //        public string MarkerName;
 //        public GameObject AugmentObject;
 //    }
-//    public prefab_AR_item[] prefab_AR_list;
+//    public AR_item[] AR_item_list;
 //    public GameObject AR_marker;
 //    Vector3 AR_marker_position;
 
@@ -335,11 +362,11 @@ public class ImageTracking : MonoBehaviour
 //    {
 //        //Debug.Log("ok0001");
 //        trackedImageManager = FindObjectOfType<ARTrackedImageManager>();
-//        for (int i = 0; i < prefab_AR_list.Length; i++)
+//        for (int i = 0; i < AR_item_list.Length; i++)
 //        {
-//            //GameObject prefab_AR = prefab_AR_list[i].AugmentObject;
-//            GameObject object_AR = prefab_AR_list[i].AugmentObject;
-//            string MarkerName = prefab_AR_list[i].MarkerName;
+//            //GameObject prefab_AR = AR_item_list[i].AugmentObject;
+//            GameObject object_AR = AR_item_list[i].AugmentObject;
+//            string MarkerName = AR_item_list[i].MarkerName;
 //            //GameObject object_AR = Instantiate(prefab_AR, Vector3.zero, Quaternion.identity);
 //            //object_AR.name = MarkerName;
 //            //POS <<<
